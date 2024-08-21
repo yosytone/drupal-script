@@ -14,6 +14,15 @@ $request = Request::createFromGlobals();
 $response = $kernel->handle($request);
 
 processAllArticles();
+/*
+$film_map = loadAllFilms();
+$person_map = loadAllPeople();
+$updated_body = processArticle(4320831, $film_map, $person_map);
+if ($updated_body !== null) {
+  echo $updated_body;
+    saveUpdatedArticle(4320831, $updated_body);
+}
+*/
 
 $kernel->terminate($request, $response);
 
@@ -23,11 +32,13 @@ function processAllArticles() {
         ->distinct(TRUE);
     $query->fields('nfd', ['nid']);
     $query->condition('nfd.type', ['article', 'news'], 'IN');
-
+    //$query->range(0, 20);
     $results = $query->execute()->fetchAll();
     $nids = array_column($results, 'nid');
 
     echo "Processing " . count($nids) . " articles...\n";
+    $total = count($nids);
+    $i = 1;
 
     $film_map = loadAllFilms();
     $person_map = loadAllPeople();
@@ -36,8 +47,10 @@ function processAllArticles() {
         echo $nid ."\n";
         $updated_body = processArticle($nid, $film_map, $person_map);
         if ($updated_body !== null) {
-            //saveUpdatedArticle($nid, $updated_body);
-            echo "Article with nid $nid updated.\n";
+            saveUpdatedArticle($nid, $updated_body);
+            //echo "Article with nid $nid updated.\n";
+            echo "$i / $total \n";
+            $i++;
         }
     }
 
@@ -73,37 +86,41 @@ function loadAllPeople() {
 }
 
 function processArticle($nid, $film_map, $person_map) {
-    $node = \Drupal\node\Entity\Node::load($nid);
-    if (!$node) return null;
+  $node = \Drupal\node\Entity\Node::load($nid);
+  if (!$node) return null;
 
-    $body = $node->get('body')->value;
+  $body = $node->get('body')->value;
 
-    $body = preg_replace_callback('/<a href="https:\/\/www\.kinomania\.ru\/film\/(\d+)\/?">.*?<\/a>/', function ($matches) use ($film_map) {
-        $old_id = $matches[1];
-        if (isset($film_map[$old_id])) {
-            $new_id = $film_map[$old_id];
-            return '<film-out nid="' . $new_id . '"></film-out>';
-        }
-        return $matches[0];
-    }, $body);
+  $body = preg_replace_callback('/<a href="https:\/\/www\.kinomania\.ru\/film\/(\d+)\/?">([^<]+)<\/a>/', function ($matches) use ($film_map) {
+      $old_id = $matches[1];
+      $link_text = $matches[2];
+      if (isset($film_map[$old_id])) {
+          $new_id = $film_map[$old_id];
+          return '<film-out nid="' . $new_id . '">' . $link_text . '</film-out>';
+      }
+      return $matches[0];
+  }, $body);
 
-    $body = preg_replace_callback('/<a href="https:\/\/www\.kinomania\.ru\/people\/(\d+)\/?">.*?<\/a>/', function ($matches) use ($person_map) {
-        $old_id = $matches[1];
-        if (isset($person_map[$old_id])) {
-            $new_id = $person_map[$old_id];
-            return '<person-out nid="' . $new_id . '"></person-out>';
-        }
-        return $matches[0];
-    }, $body);
+  $body = preg_replace_callback('/<a href="https:\/\/www\.kinomania\.ru\/people\/(\d+)\/?">([^<]+)<\/a>/', function ($matches) use ($person_map) {
+      $old_id = $matches[1];
+      $link_text = $matches[2];
+      if (isset($person_map[$old_id])) {
+          $new_id = $person_map[$old_id];
+          return '<person-out nid="' . $new_id . '">' . $link_text . '</person-out>';
+      }
+      return $matches[0];
+  }, $body);
 
-    echo $body;
-    return $body;
+  return $body;
 }
+
+
 
 function saveUpdatedArticle($nid, $updated_body) {
     $node = \Drupal\node\Entity\Node::load($nid);
     if ($node) {
-        $node->set('body', ['value' => $updated_body, 'format' => 'full_html']);
+        //$node->set('body', ['value' => $updated_body, 'format' => 'full_html']);
+        $node->set('body', $updated_body);
         $node->save();
         echo "Article with nid $nid updated.\n";
     }
